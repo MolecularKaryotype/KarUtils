@@ -1,4 +1,4 @@
-from Structures import Arm, Segment, Path
+from .Structures import Arm, Segment, Path
 
 
 def read_forbidden_regions(forbidden_region_file) -> Arm:

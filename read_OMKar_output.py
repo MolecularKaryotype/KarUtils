@@ -1,5 +1,5 @@
-from forbidden_region_processing import *
-from utils import *
+from .forbidden_region_processing import *
+from .utils import *
 
 
 def read_OMKar_output_to_path(OMKar_output_file, forbidden_region_file):
