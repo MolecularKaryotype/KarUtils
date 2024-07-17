@@ -162,6 +162,22 @@ class Segment:
         else:
             return False
 
+    def segment_enclosed_by(self, start_pos, end_pos, check_inverted=False):
+        """
+        report whether segment is in-between (inclusive) of a pair of indices
+        :param check_inverted: whether inverted segment will be accounted
+        :param start_pos:
+        :param end_pos:
+        :return: bool
+        """
+        if self.direction():
+            if self.start >= start_pos and self.end <= end_pos:
+                return True
+        elif check_inverted:
+            if self.end >= start_pos and self.start <= end_pos:
+                return True
+        return False
+
     def bp_in_interior(self, bp_chromosome, bp_index, bp_type):
         """
         For KarComparator
@@ -322,7 +338,7 @@ class Arm:
         Search through the arm and generate the breakpoint, if within an interior of a Segment
         :param bp_chromosome:
         :param bp_index:
-        :param bp_type: start or end bp
+        :param bp_type: 'start' or 'end' bp
         :return:
         """
         current_segment_index = 0

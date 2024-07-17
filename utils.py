@@ -3,7 +3,11 @@ import numpy as np
 
 def read_file_into_lines(input_file_path):
     with open(input_file_path) as fp_read:
-        lines = [line.rstrip('\n') for line in fp_read]
+        lines = []
+        for line in fp_read:
+            line = line.rstrip('\n')
+            line = line.strip()
+            lines.append(line)
     return lines
 
 
