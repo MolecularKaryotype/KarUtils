@@ -332,43 +332,63 @@ class Arm:
                 return_list.append(tuple([segment.chr_name, segment.end, 'start']))
         return return_list
 
-    def introduce_breakpoint(self, bp_chromosome, bp_index, bp_type):
+
+    def breakpoint_exists_on_boundary(self, bp_chromosome, bp_pos, boundary_type):
+        """
+        :param bp_chromosome:
+        :param bp_pos:
+        :param boundary_type: 'start' or 'end'
+        :return:
+        """
+        for seg in self.segments:
+            if boundary_type == 'start':
+                check_pos = seg.start
+            elif boundary_type == 'end':
+                check_pos = seg.end
+            else:
+                raise ValueError()
+            if bp_chromosome == seg.chr_name and check_pos == bp_pos:
+                return True
+        return False
+
+
+    def introduce_breakpoint(self, bp_chromosome, bp_pos, bp_type):
         """
         For KarComparator
         Search through the arm and generate the breakpoint, if within an interior of a Segment
         :param bp_chromosome:
-        :param bp_index:
+        :param bp_pos: pos on the chromosome
         :param bp_type: 'start' or 'end' bp
         :return:
         """
         current_segment_index = 0
         while current_segment_index < len(self.segments):
             current_segment = self.segments[current_segment_index]
-            if current_segment.bp_in_interior(bp_chromosome, bp_index, bp_type):
+            if current_segment.bp_in_interior(bp_chromosome, bp_pos, bp_type):
                 insertion_index = self.get_segment_index(current_segment)
                 if current_segment.direction():
                     if bp_type == "start":
-                        left_segment = Segment(current_segment.chr_name, current_segment.start, bp_index - 1,
+                        left_segment = Segment(current_segment.chr_name, current_segment.start, bp_pos - 1,
                                                current_segment.segment_type, current_segment.kt_index)
-                        right_segment = Segment(current_segment.chr_name, bp_index, current_segment.end,
+                        right_segment = Segment(current_segment.chr_name, bp_pos, current_segment.end,
                                                 current_segment.segment_type, current_segment.kt_index)
                     elif bp_type == "end":
-                        left_segment = Segment(current_segment.chr_name, current_segment.start, bp_index,
+                        left_segment = Segment(current_segment.chr_name, current_segment.start, bp_pos,
                                                current_segment.segment_type, current_segment.kt_index)
-                        right_segment = Segment(current_segment.chr_name, bp_index + 1, current_segment.end,
+                        right_segment = Segment(current_segment.chr_name, bp_pos + 1, current_segment.end,
                                                 current_segment.segment_type, current_segment.kt_index)
                     else:
                         raise ValueError('bp_type must be start OR end')
                 else:
                     if bp_type == "start":
-                        left_segment = Segment(current_segment.chr_name, current_segment.start, bp_index,
+                        left_segment = Segment(current_segment.chr_name, current_segment.start, bp_pos,
                                                current_segment.segment_type, current_segment.kt_index)
-                        right_segment = Segment(current_segment.chr_name, bp_index - 1, current_segment.end,
+                        right_segment = Segment(current_segment.chr_name, bp_pos - 1, current_segment.end,
                                                 current_segment.segment_type, current_segment.kt_index)
                     elif bp_type == "end":
-                        left_segment = Segment(current_segment.chr_name, current_segment.start, bp_index + 1,
+                        left_segment = Segment(current_segment.chr_name, current_segment.start, bp_pos + 1,
                                                current_segment.segment_type, current_segment.kt_index)
-                        right_segment = Segment(current_segment.chr_name, bp_index, current_segment.end,
+                        right_segment = Segment(current_segment.chr_name, bp_pos, current_segment.end,
                                                 current_segment.segment_type, current_segment.kt_index)
                     else:
                         raise ValueError('bp_type must be start OR end')
