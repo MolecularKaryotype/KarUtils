@@ -169,16 +169,36 @@ def rotate_and_bin_path(path_list, forbidden_region_file='Metadata/acrocentric_t
             path.path_chr = "-no centromere, highest representation: " + get_highest_represented_chr(path.linear_path.segments)
             first_segment = path.linear_path.segments[0]
             last_segment = path.linear_path.segments[-1]
+
             if first_segment.chr_name != last_segment.chr_name:
-                # search for the last segment that is the same chr origin as the first segment
+                # search for the last segment that is the same chr origin as the first segment (cont.)
                 next_idx = 0
-                while path.linear_path.segments[next_idx].chr_name == first_segment.chr_name:
-                    next_idx += 1
-                last_segment = path.linear_path.segments[next_idx]
-            # TODO: also add reverse segment search and rotate based on major-representation
-            if first_segment.start > last_segment.end:
-                rotated_path_idx.append(path_idx)
-                rotate_path(path)
+                while True:
+                    if next_idx + 1 < len(path.linear_path.segments) and path.linear_path.segments[next_idx + 1].chr_name == first_segment.chr_name:
+                        next_idx += 1
+                    else:
+                        break
+                last_segment_same_chr = path.linear_path.segments[next_idx]
+                forward_delta = last_segment_same_chr.end - first_segment.start
+
+                # search for the first segment that is the same chr origin as the last segment (cont.)
+                previous_idx = len(path.linear_path.segments) - 1
+                while True:
+                    if previous_idx - 1 >= 0 and path.linear_path.segments[previous_idx - 1].chr_name == last_segment.chr_name:
+                        previous_idx -= 1
+                    else:
+                        break
+                first_segment_same_chr = path.linear_path.segments[previous_idx]
+                reverse_delta = last_segment.end - first_segment_same_chr.start
+
+                # take major representation
+                if forward_delta + reverse_delta < 0:
+                    rotated_path_idx.append(path_idx)
+                    rotate_path(path)
+            else:
+                if first_segment.start > last_segment.end:
+                    rotated_path_idx.append(path_idx)
+                    rotate_path(path)
     if return_rotated_idx:
         return rotated_path_idx
 
