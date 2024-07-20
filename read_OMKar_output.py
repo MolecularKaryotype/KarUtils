@@ -134,9 +134,10 @@ def rotate_and_bin_path(path_list, forbidden_region_file='Metadata/acrocentric_t
     """
     rotated_path_idx = []
     # isolate centromere
-    forbidden_region_path = Path(read_forbidden_regions(forbidden_region_file), 'forbidden_regions', 'forbidden_regions')
-    for path in path_list:
-        path.generate_mutual_breakpoints(other_path=forbidden_region_path, mutual=False)
+    # forbidden_region_path = Path(read_forbidden_regions(forbidden_region_file), 'forbidden_regions', 'forbidden_regions')
+    label_path_with_forbidden_regions(path_list, forbidden_region_file)
+    # for path in path_list:
+    #     path.generate_mutual_breakpoints(other_path=forbidden_region_path, mutual=False)
 
     # get centromere, rotate if backward, and bin path
     for path_idx, path in enumerate(path_list):

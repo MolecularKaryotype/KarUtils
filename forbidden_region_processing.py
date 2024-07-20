@@ -27,7 +27,7 @@ def label_path_with_forbidden_regions(input_path_list: [Path], forbidden_region_
     forbidden_regions_path = Path(read_forbidden_regions(forbidden_region_file), 'forbidden_regions', 'forbidden_regions')
     for path_itr in input_path_list:
         # breakup into disjoint segments
-        path_itr.generate_mutual_breakpoints(forbidden_regions_path, mutual=False)
+        path_itr.generate_mutual_breakpoints(forbidden_regions_path, mutual=True)
 
         # label forbidden regions
         for path_segment_itr in path_itr.linear_path.segments:
