@@ -342,9 +342,16 @@ class Arm:
         """
         for seg in self.segments:
             if boundary_type == 'start':
-                check_pos = seg.start
+                if seg.direction():
+                    check_pos = seg.start
+                else:
+                    check_pos = seg.end
+
             elif boundary_type == 'end':
-                check_pos = seg.end
+                if seg.direction():
+                    check_pos = seg.end
+                else:
+                    check_pos = seg.start
             else:
                 raise ValueError()
             if bp_chromosome == seg.chr_name and check_pos == bp_pos:
