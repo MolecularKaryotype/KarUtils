@@ -1,4 +1,5 @@
 from .Structures import Arm, Segment, Path
+from .utils import *
 
 
 def read_forbidden_regions(forbidden_region_file) -> Arm:
@@ -40,7 +41,7 @@ def label_path_with_forbidden_regions(input_path_list: [Path], forbidden_region_
                 path_segment_itr.segment_type = 'arm_region'
 
 
-def get_chr_length_from_forbidden_file(input_chr_name, forbidden_region_file='Metadata/acrocentric_telo_cen.bed'):
+def get_chr_length_from_forbidden_file(input_chr_name, forbidden_region_file=get_metadata_file_path("acrocentric_telo_cen.bed")):
     with open(forbidden_region_file) as fp_read:
         fp_read.readline()  # skip index line
         for line in fp_read:
@@ -54,9 +55,8 @@ def get_chr_length_from_forbidden_file(input_chr_name, forbidden_region_file='Me
     return None
 
 
-
 def test():
-    print(read_forbidden_regions('../Metadata/merged_forbidden_regions_unique.bed'))
+    print(read_forbidden_regions(get_metadata_file_path("acrocentric_telo_cen.bed")))
 
 
 if __name__ == "__main__":

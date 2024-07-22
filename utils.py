@@ -1,4 +1,5 @@
 import numpy as np
+import os
 
 
 def read_file_into_lines(input_file_path):
@@ -76,3 +77,9 @@ def generate_circle(start_x, peak_y, circle_size_multiplier, num_points=100):
         raise RuntimeError('circle coordinate formation error')
 
     return points
+
+
+def get_metadata_file_path(filename):
+    karutils_dir = os.path.dirname(__file__)
+    metadata_dir = os.path.join(karutils_dir, 'Metadata')
+    return os.path.join(metadata_dir, filename)
