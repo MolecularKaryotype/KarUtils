@@ -1,6 +1,8 @@
 from .forbidden_region_processing import *
 from .utils import *
 
+import pandas as pd
+
 
 def read_OMKar_output_to_path(OMKar_output_file, forbidden_region_file):
     path_list, index_dict = read_OMKar_output(OMKar_output_file, return_segment_dict=True)
@@ -204,6 +206,26 @@ def rotate_and_bin_path(path_list, forbidden_region_file='Metadata/acrocentric_t
         return rotated_path_idx
 
 
+def count_chr_number(binned_path_list):
+    chr_count = {}
+    for path in binned_path_list:
+        path_chr = path.path_chr
+        if ": " in path_chr:
+            path_chr = path_chr.split(': ')[-1]
+
+        if path_chr not in chr_count:
+            chr_count[path_chr] = 1
+        else:
+            chr_count[path_chr] += 1
+
+    for i in range(1, 23):
+        if f"Chr{i}" in chr_count and chr_count[f"Chr{i}"] == 2:
+            chr_count.pop(f"Chr{i}")
+        elif f"Chr{i}" not in chr_count:
+            chr_count[f"Chr{i}"] = 0
+    return chr_count
+
+
 def report_centromere_anomaly(path_list):
     for path in path_list:
         if "no centromere" in path.path_chr or "multiple centromere" in path.path_chr:
@@ -289,6 +311,22 @@ def bin_path_by_chr_content(input_path):
     return max_count_chr
 
 
+def read_bed_file(file_path):
+    df = pd.read_csv(file_path, sep='\t')
+    return df
+
+
+def bed_similar_sv_edge(bed_df, chromosome, pos1, pos2, approx_distance, reverse_search=True):
+    chr_mask = bed_df['chromosome'] == chromosome
+    if reverse_search:
+        mask1 = (abs(bed_df['start'] - pos1) + abs(bed_df['end'] - pos2)) < approx_distance
+        mask2 = (abs(bed_df['start'] - pos2) + abs(bed_df['end'] - pos1)) < approx_distance
+        return bed_df[chr_mask & (mask1 | mask2)]
+    else:
+        mask1 = (abs(bed_df['start'] - pos1) + abs(bed_df['end'] - pos2)) < approx_distance
+        return bed_df[chr_mask & mask1]
+
+
 def test():
     path_list = read_OMKar_output("/media/zhaoyang-new/workspace/KarSim/KarComparator/new_data_files/OMKar_testbuild3/23X_15q26_overgrowth_r1.1.txt")
     rotate_and_bin_path(path_list, "Metadata/merged_forbidden_regions_unique.bed")
@@ -321,4 +359,4 @@ def test_output_index_list():
 
 
 if __name__ == "__main__":
-    test_output_index_list()
+    read_bed_file('/media/zhaoyang-new/workspace/keyhole/0717_output/510/510_SV.bed')
