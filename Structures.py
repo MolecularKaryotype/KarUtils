@@ -222,6 +222,18 @@ class Segment:
                 return True
 
         return False
+    
+    def continuous(self, other):
+        if self.chr_name != other.chr_name:
+            return False
+
+        if self.start < other.end:
+            return False
+        
+        if abs(self.start - other.end) > 5:
+            return False
+
+        return False
 
     def assign_cn_bin(self, cn_bins):
         cn = []
@@ -939,7 +951,6 @@ def flip_dict(input_dict):
     for key, value in input_dict.items():
         output_dict[value] = key
     return output_dict
-
 
 if __name__ == "__main__":
     pass
