@@ -10,7 +10,33 @@ def read_OMKar_output_to_path(OMKar_output_file, forbidden_region_file):
     report_centromere_anomaly(path_list)
     return index_dict, path_list
 
+def group_segments_by_chr(segment_dict):
 
+    # Initialize defaultdict to hold lists
+    grouped_by_chr = defaultdict(list)
+
+    # Iterate over the people and group by age
+    for index,segment in segment_dict.items():
+        chr = segment.chr_name
+        grouped_by_chr[chr].append(segment)
+
+    # Convert defaultdict back to a regular dictionary if needed
+    grouped_by_chr = dict(grouped_by_chr)
+    return grouped_by_chr
+
+def all_segments_continuous(segments):
+    # Iterate through the list of segments
+    for i in range(len(segments) - 1):
+        if not segments[i].continuous(segments[i + 1]):
+            return False  
+    return True 
+
+def check_continous(segment_dict):
+    groups = group_segments_by_chr(segment_dict)
+    for chr, group in groups.items():
+        if all_segments_continuous(group) == False:
+            return False
+    return True
 
 # Validate the omkar output is correct
 def validate_OMKar_output(path_list, segment_dict):
@@ -19,8 +45,8 @@ def validate_OMKar_output(path_list, segment_dict):
     for index,segment in segment_dict.items():
         if not segment.direction():
             checker = False
-    # TODO Implement the check_continous function to group by chr and check each segment.
-    # checker = check_continous(segment_dict=segment_dict)
+    # Implement the check_continous function to group by chr and check each segment.
+    checker = check_continous(segment_dict=segment_dict)
                            
     return checker
 
@@ -424,8 +450,8 @@ def test():
 
 def test_read_OMKar_output():
     path_list, segment_list = read_OMKar_output("sample_input/23Y_Cri_du_Chat_r1.1.txt", return_segment_dict=True)
-    validate_OMKar_output(path_list,segment_dict=segment_list)
-    post_process_function(path_list,segment_list)
+    if validate_OMKar_output(path_list,segment_dict=segment_list) == True:
+        post_process_function(path_list,segment_list)
 
 def test_read_OMKar_to_path():
     idx_dict, path_list = read_OMKar_output_to_path("sample_input/23Y_Cri_du_Chat_r1.1.txt", "Metadata/acrocentric_telo_cen.bed")

@@ -227,11 +227,8 @@ class Segment:
         if self.chr_name != other.chr_name:
             return False
 
-        if self.start < other.end:
-            return False
-        
-        if abs(self.start - other.end) > 5:
-            return False
+        if self.end < other.start and abs(other.start - self.end) <= 5:
+            return True
 
         return False
 
