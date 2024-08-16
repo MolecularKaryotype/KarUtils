@@ -104,6 +104,18 @@ def get_prefix_suffix_forbidden_boundaries(forbidden_region_file=get_metadata_fi
     return boundaries
 
 
+def get_centromere_boundaries(forbidden_region_file=get_metadata_file_path("acrocentric_telo_cen.bed")):
+    forbidden_region_arm = read_forbidden_regions(forbidden_region_file)
+    boundaries = {f"Chr{i}": {'start': -1, 'end': -1} for i in list(range(1, 23)) + ['X', 'Y']}  # for every chromosome, there is a start + end boundary
+    for seg in forbidden_region_arm.segments:
+        seg_chr = seg.chr_name
+        seg_type = seg.segment_type
+        if seg_type == 'centromere':
+            boundaries[seg_chr]['start'] = seg.start
+            boundaries[seg_chr]['end'] = seg.end
+    return boundaries
+
+
 def test():
     print(read_forbidden_regions(get_metadata_file_path("acrocentric_telo_cen.bed")))
 
