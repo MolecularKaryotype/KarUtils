@@ -62,7 +62,7 @@ def read_OMKar_output(file, return_segment_dict=False):
         return path_list
 
 
-def read_OMKar_to_indexed_list(OMKar_output_file, forbidden_region_file='Metadata/acrocentric_telo_cen.bed'):
+def read_OMKar_to_indexed_list(OMKar_output_file, forbidden_region_file=get_metadata_file_path('acrocentric_telo_cen.bed')):
     path_list, index_dict = read_OMKar_output(OMKar_output_file, return_segment_dict=True)
     ## extract which path to rotate and rotate, without splitting segments
     tmp_path_list = []
