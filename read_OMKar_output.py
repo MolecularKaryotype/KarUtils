@@ -1,8 +1,7 @@
-from .forbidden_region_processing import *
-from .utils import *
-
+from forbidden_region_processing import *
+from utils import *
+from collections import defaultdict
 import pandas as pd
-
 
 def read_OMKar_output_to_path(OMKar_output_file, forbidden_region_file):
     path_list, index_dict = read_OMKar_output(OMKar_output_file, return_segment_dict=True)
@@ -11,6 +10,120 @@ def read_OMKar_output_to_path(OMKar_output_file, forbidden_region_file):
     report_centromere_anomaly(path_list)
     return index_dict, path_list
 
+def group_segments_by_chr(segment_dict):
+
+    # Initialize defaultdict to hold lists
+    grouped_by_chr = defaultdict(list)
+
+    # Iterate over the people and group by age
+    for index,segment in segment_dict.items():
+        chr = segment.chr_name
+        grouped_by_chr[chr].append(segment)
+
+    # Convert defaultdict back to a regular dictionary if needed
+    grouped_by_chr = dict(grouped_by_chr)
+    return grouped_by_chr
+
+def all_segments_continuous(segments):
+    # Iterate through the list of segments
+    for i in range(len(segments) - 1):
+        if not segments[i].continuous(segments[i + 1]):
+            return False  
+    return True 
+
+def check_continous(segment_dict):
+    groups = group_segments_by_chr(segment_dict)
+    for chr, group in groups.items():
+        if all_segments_continuous(group) == False:
+            return False
+    return True
+
+# Validate the omkar output is correct
+def validate_OMKar_output(path_list, segment_dict):
+    checker = True
+    
+    for index,segment in segment_dict.items():
+        if not segment.direction():
+            checker = False
+    # Implement the check_continous function to group by chr and check each segment.
+    checker = check_continous(segment_dict=segment_dict)
+                           
+    return checker
+
+def concatenate_segments(segments):
+    return ' '.join(segment.kt_index for segment in segments)
+
+
+def post_process_function(path_list, segment_list):
+    tmp_path_list = []
+    for path in path_list:
+        tmp_path = path.duplicate()
+        tmp_path_list.append(tmp_path)
+    # label_path_with_forbidden_regions(tmp_path_list, forbidden_region_file)
+    rotated_path_idx = rotate_and_bin_path(tmp_path_list, return_rotated_idx=True)
+    for path_idx in rotated_path_idx:
+        path = path_list[path_idx]
+        path.reverse()
+
+    merged_segments = []
+    path_segment_dict = {}
+    
+    for path in path_list:
+        new_concate_segments = concatenate_segments(path.linear_path.segments)
+        path_segment_dict[path.path_name] = new_concate_segments
+    duplicated_v = repeated_segments(path_segment_dict)
+    
+    #For each path that has segments to be merged, update segment list
+    for segments, paths in duplicated_v.items():
+        for path_name in paths:
+            path = find_path(path_list, path_name)
+            path.linear_path.segments = merge_segments(path.linear_path.segments)
+    segments = []
+    for path in path_list:
+        segments.extend(path.linear_path.segments)
+    sorted_segments = list(set(segments))
+    sorted_segments = sorted(sorted_segments, key=sort_segment)
+    for index, seg in enumerate(sorted_segments):
+        seg_dir = seg.kt_index[-1]
+        seg.kt_index = str(index)+seg_dir
+
+def sort_segment(segment):
+    return int(segment.kt_index[:-1])
+
+def find_path(path_list, path_name):
+    for path in path_list:
+        if path.path_name == path_name:
+            return path
+    return None
+
+def merge_segments(segment_list):
+    #TODO Make sure that the list of segments are valid
+    segment_direction = segment_list[0].kt_index[-1]
+    segment = Segment(segment_list[0].chr_name, segment_list[0].start, segment_list[-1].end, "OMKar_unlabeled")
+    segment.kt_index = segment_list[0].kt_index
+    return [segment]
+
+def repeated_segments(path_segment_dict):
+    # Reverse mapping dictionary
+    reverse_dict = {}
+
+    # Populate reverse_dict with segments as keys and paths as values
+    for path, segments in path_segment_dict.items():
+        if segments not in reverse_dict:
+            reverse_dict[segments] = []
+        reverse_dict[segments].append(path)
+
+    # Find duplicates
+    duplicates = {seg: paths for seg, paths in reverse_dict.items() if len(paths) >1 and len(seg.split(" ")) > 1}
+    return duplicates
+
+
+    
+    # merge_identical_paths(path_list)
+
+
+def write_OMKar_to_file(path_list, segment_list, filename):
+    return None
 
 def read_OMKar_output(file, return_segment_dict=False):
     segment_dict = {}
@@ -336,10 +449,9 @@ def test():
 
 
 def test_read_OMKar_output():
-    path_list = read_OMKar_output("sample_input/23Y_Cri_du_Chat_r1.1.txt")
-    for path in path_list:
-        print(path)
-
+    path_list, segment_list = read_OMKar_output("sample_input/23Y_Cri_du_Chat_r1.1.txt", return_segment_dict=True)
+    if validate_OMKar_output(path_list,segment_dict=segment_list) == True:
+        post_process_function(path_list,segment_list)
 
 def test_read_OMKar_to_path():
     idx_dict, path_list = read_OMKar_output_to_path("sample_input/23Y_Cri_du_Chat_r1.1.txt", "Metadata/acrocentric_telo_cen.bed")
@@ -359,4 +471,6 @@ def test_output_index_list():
 
 
 if __name__ == "__main__":
-    read_bed_file('/media/zhaoyang-new/workspace/keyhole/0717_output/510/510_SV.bed')
+    # read_bed_file('/media/zhaoyang-new/workspace/keyhole/0717_output/510/510_SV.bed')
+    test_read_OMKar_output()
+    

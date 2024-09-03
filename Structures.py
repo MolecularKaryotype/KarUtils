@@ -222,6 +222,15 @@ class Segment:
                 return True
 
         return False
+    
+    def continuous(self, other):
+        if self.chr_name != other.chr_name:
+            return False
+
+        if self.end < other.start and abs(other.start - self.end) <= 5:
+            return True
+
+        return False
 
     def assign_cn_bin(self, cn_bins):
         cn = []
@@ -819,6 +828,17 @@ class Path:
     def __str__(self):
         return str("chr_bin: {}, path_name: {}, segments: {}".format(self.path_chr, self.path_name, self.linear_path))
 
+    def drop_forbidden_region_segments(self):
+        segment_idx_to_del = []
+        for idx, seg in enumerate(self.linear_path.segments):
+            seg_type = seg.segment_type
+            if 'acrocentric' in seg_type or 'telomere' in seg_type:
+                segment_idx_to_del.append(idx)
+        # if segment_idx_to_del:
+        #     print(f"length({len(self.linear_path.segments)}): {segment_idx_to_del}")
+        new_segments = [seg for idx, seg in enumerate(self.linear_path.segments) if idx not in segment_idx_to_del]
+        self.linear_path.segments = new_segments
+
     def concise_str(self):
         segment_str = ""
         for segment in self.linear_path.segments:
@@ -939,7 +959,6 @@ def flip_dict(input_dict):
     for key, value in input_dict.items():
         output_dict[value] = key
     return output_dict
-
 
 if __name__ == "__main__":
     pass
