@@ -83,3 +83,8 @@ def get_metadata_file_path(filename):
     karutils_dir = os.path.dirname(__file__)
     metadata_dir = os.path.join(karutils_dir, 'Metadata')
     return os.path.join(metadata_dir, filename)
+
+
+def round_half_up(n):
+    import math
+    return int(math.floor(n + 0.5))

@@ -1,5 +1,5 @@
-from forbidden_region_processing import *
-from utils import *
+from .forbidden_region_processing import *
+from .utils import *
 from collections import defaultdict
 import pandas as pd
 
@@ -141,8 +141,10 @@ def read_OMKar_output(file, return_segment_dict=False):
                 elif chr_name == "24":
                     chr_name = "Y"
                 chr_name = "Chr" + chr_name
-                start = int(line[3].split(".")[0])
-                end = int(line[4].split(".")[0])
+                # start = int(line[3].split(".")[0])
+                # end = int(line[4].split(".")[0])
+                start = round_half_up(float(line[3]))
+                end = round_half_up(float(line[4]))
                 segment_dict[int(line[1])] = Segment(chr_name, start, end, "OMKar_unlabeled")
             elif line[0].startswith("Path"):
                 # print(line)
