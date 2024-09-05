@@ -223,13 +223,16 @@ class Segment:
 
         return False
     
-    def continuous(self, other):
+    def validate_continuity(self, other, allowance):
         if self.chr_name != other.chr_name:
+            print(f"segments out of order (CHR): {self}, {other}")
             return False
-
-        if self.end < other.start and abs(other.start - self.end) <= 5:
+        if other.start - self.end < 0:
+            # we also do not allow overlap for node separation (s/t) reason (will cause issue in edge orientation)
+            print(f"segments out of order (POS): {self}, {other}")
+            return False
+        if other.start - self.end <= allowance:
             return True
-
         return False
 
     def assign_cn_bin(self, cn_bins):

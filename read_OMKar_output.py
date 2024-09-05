@@ -10,120 +10,376 @@ def read_OMKar_output_to_path(OMKar_output_file, forbidden_region_file):
     report_centromere_anomaly(path_list)
     return index_dict, path_list
 
-def group_segments_by_chr(segment_dict):
+#################################MK-VALIDATION################################
 
-    # Initialize defaultdict to hold lists
+def group_segments_by_chr(segment_dict):
     grouped_by_chr = defaultdict(list)
 
-    # Iterate over the people and group by age
-    for index,segment in segment_dict.items():
-        chr = segment.chr_name
-        grouped_by_chr[chr].append(segment)
+    # make sure the segment are enuemrated in order
+    sorted_idx = sorted(segment_dict.keys(), key=int)
+    for idx in sorted_idx:
+        segment = segment_dict[idx]
+        grouped_by_chr[segment.chr_name].append(segment)
 
-    # Convert defaultdict back to a regular dictionary if needed
     grouped_by_chr = dict(grouped_by_chr)
     return grouped_by_chr
 
-def all_segments_continuous(segments):
-    # Iterate through the list of segments
+def all_segments_continuous(segments, allowance):
     for i in range(len(segments) - 1):
-        if not segments[i].continuous(segments[i + 1]):
-            return False  
-    return True 
-
-def check_continous(segment_dict):
-    groups = group_segments_by_chr(segment_dict)
-    for chr, group in groups.items():
-        if all_segments_continuous(group) == False:
+        if not segments[i].validate_continuity(segments[i + 1], allowance):
+            print(f"not continuous: {segments[i]}, {segments[i + 1]}")
             return False
     return True
 
-# Validate the omkar output is correct
-def validate_OMKar_output(path_list, segment_dict):
-    checker = True
-    
-    for index,segment in segment_dict.items():
-        if not segment.direction():
-            checker = False
-    # Implement the check_continous function to group by chr and check each segment.
-    checker = check_continous(segment_dict=segment_dict)
-                           
-    return checker
+def check_continous(segment_dict, allowance=5):
+    groups = group_segments_by_chr(segment_dict)
+    for chrom, segments in groups.items():
+        if not all_segments_continuous(segments, allowance):
+            return False
+    return True
 
-def concatenate_segments(segments):
-    return ' '.join(segment.kt_index for segment in segments)
+def check_spanning(segment_dict, forbidden_region_file, allowance=5):
+    groups = group_segments_by_chr(segment_dict)
+    nonforbidden_boundaries = get_prefix_suffix_forbidden_boundaries(forbidden_region_file=forbidden_region_file)
+    for chrom, segments in groups.items():
+        chrom_nonforbidden_boundaries = nonforbidden_boundaries[chrom]
+        ordered_segments = [seg.duplicate() for seg in segments]
+        for seg in ordered_segments:
+            if not seg.direction():
+                seg.invert()
+        current_pos = chrom_nonforbidden_boundaries['start']
+        for seg in ordered_segments:
+            if seg.start - current_pos >= allowance:
+                print(f"seg not spanning: {current_pos}, {seg}")
+                return False
+            current_pos = seg.end
+        if chrom_nonforbidden_boundaries['end'] - current_pos >= allowance:
+            print(f"last seg not spanning: {current_pos}, {chrom_nonforbidden_boundaries['end']}")
+            return False
+    return True
 
+def validate_OMKar_output(mk_dir, cont_allowance=50000, span_allowance=50000,
+                            forbidden_region_file=get_metadata_file_path('acrocentric_telo_cen.bed')):
+    def validate_single_file(filepath):
+        path_list, segment_dict = read_OMKar_output(filepath, return_segment_dict=True)
+        for index, segment in segment_dict.items():
+            if not segment.direction():
+                print(f"inverted direction: {segment}")
+                return False
+        if not check_continous(segment_dict, allowance=cont_allowance):
+            return False
+        if not check_spanning(segment_dict, forbidden_region_file, allowance=span_allowance):
+            return False
+        return True
 
-def post_process_function(path_list, segment_list):
+    file_names = os.listdir(mk_dir)
+    all_true = True
+    for omkar_output in file_names:
+        omkar_output_filepath = os.path.join(mk_dir, omkar_output)
+        if not validate_single_file(omkar_output_filepath):
+            all_true = False
+            print(f"^FALSE: {omkar_output}")
+        else:
+            print(f"^TRUE: {omkar_output}")
+
+    print(f"***ALL_RETURNED_CORRECT: {all_true}")
+
+#################################POST-PROCESSING################################
+
+def rotate_and_bin_path(path_list, forbidden_region_file=get_metadata_file_path('acrocentric_telo_cen.bed'), return_rotated_idx=False):
+    """
+    only works if each path contains exactly one centromere, OW will bin according to t1+t2+centromere percentage,
+    if still no, will bin according to overall chr-content percentage
+    will mark path accordingly if centromere anomaly exists
+    :param forbidden_region_file:
+    :param path_list:
+    :return: path_list
+    """
+    rotated_path_idx = []
+    # isolate centromere
+    # forbidden_region_path = Path(read_forbidden_regions(forbidden_region_file), 'forbidden_regions', 'forbidden_regions')
+    label_path_with_forbidden_regions(path_list, forbidden_region_file)
+    # for path in path_list:
+    #     path.generate_mutual_breakpoints(other_path=forbidden_region_path, mutual=False)
+
+    # get centromere, rotate if backward, and bin path
+    for path_idx, path in enumerate(path_list):
+        # print(path.path_name)
+        path_centromere = []
+        path_telomeres = []
+        for segment_itr in path.linear_path.segments:
+            if 'centromere' in segment_itr.segment_type:
+                path_centromere.append(segment_itr.duplicate())
+            elif 'telomere' in segment_itr.segment_type:
+                path_telomeres.append(segment_itr.duplicate())
+
+        path_centromere_arm = Arm(path_centromere, 'centromeres')
+        path_centromere_arm.merge_breakpoints()
+
+        if len(path_centromere_arm.segments) >= 1:
+            centromere_set = set()
+            for cen_seg in path_centromere_arm.segments:
+                centromere_set.add(cen_seg.chr_name)
+            if len(centromere_set) > 1:
+                path.path_chr = '-multiple centromeres ({}), highest representation: {}'.format(centromere_set, get_highest_represented_chr(path_centromere))
+            else:
+                path.path_chr = path_centromere_arm.segments[0].chr_name
+            if not highest_represented_direction(path_centromere):
+                rotated_path_idx.append(path_idx)
+                rotate_path(path)
+        else:
+            # no centromere segment detected, assume only q arm remains
+            # take the first and the last segment, rotate chr if last segment index > first AND they are on the same chr
+            path.path_chr = "-no centromere, highest representation: " + get_highest_represented_chr(path.linear_path.segments)
+            first_segment = path.linear_path.segments[0]
+            last_segment = path.linear_path.segments[-1]
+
+            if first_segment.chr_name != last_segment.chr_name:
+                # search for the last segment that is the same chr origin as the first segment (cont.)
+                next_idx = 0
+                while True:
+                    if next_idx + 1 < len(path.linear_path.segments) and path.linear_path.segments[next_idx + 1].chr_name == first_segment.chr_name:
+                        next_idx += 1
+                    else:
+                        break
+                last_segment_same_chr = path.linear_path.segments[next_idx]
+                forward_delta = last_segment_same_chr.end - first_segment.start
+
+                # search for the first segment that is the same chr origin as the last segment (cont.)
+                previous_idx = len(path.linear_path.segments) - 1
+                while True:
+                    if previous_idx - 1 >= 0 and path.linear_path.segments[previous_idx - 1].chr_name == last_segment.chr_name:
+                        previous_idx -= 1
+                    else:
+                        break
+                first_segment_same_chr = path.linear_path.segments[previous_idx]
+                reverse_delta = last_segment.end - first_segment_same_chr.start
+
+                # take major representation
+                if forward_delta + reverse_delta < 0:
+                    rotated_path_idx.append(path_idx)
+                    rotate_path(path)
+            else:
+                if first_segment.start > last_segment.end:
+                    rotated_path_idx.append(path_idx)
+                    rotate_path(path)
+    if return_rotated_idx:
+        return rotated_path_idx
+
+def post_process_OMKar_output(path_list, gap_allowance=5):
+    ### invert paths that are output as backward
     tmp_path_list = []
     for path in path_list:
         tmp_path = path.duplicate()
         tmp_path_list.append(tmp_path)
-    # label_path_with_forbidden_regions(tmp_path_list, forbidden_region_file)
     rotated_path_idx = rotate_and_bin_path(tmp_path_list, return_rotated_idx=True)
     for path_idx in rotated_path_idx:
         path = path_list[path_idx]
         path.reverse()
 
-    merged_segments = []
-    path_segment_dict = {}
-    
+    ### merge segments that always appear together, in the same orientation
+    ## enumerate longest contig/sublist of segments that are cont. 1) in orientation, 2) in positions (<= 5 bp gap) and Chr
+    sublists = []
     for path in path_list:
-        new_concate_segments = concatenate_segments(path.linear_path.segments)
-        path_segment_dict[path.path_name] = new_concate_segments
-    duplicated_v = repeated_segments(path_segment_dict)
-    
-    #For each path that has segments to be merged, update segment list
-    for segments, paths in duplicated_v.items():
-        for path_name in paths:
-            path = find_path(path_list, path_name)
-            path.linear_path.segments = merge_segments(path.linear_path.segments)
-    segments = []
+        start_seg_idx = 0
+        while start_seg_idx < len(path.linear_path.segments):
+            end_seg_idx = legal_contig_extension(path.linear_path.segments, start_seg_idx, gap_allowance)
+            sublist = path.linear_path.segments[start_seg_idx:end_seg_idx+1]
+            ## reorient each sublist so that they are each in the + direction
+            oriented_sublist = positively_orient_sublist(sublist)
+            if oriented_sublist not in sublists:
+                # prevent duplicates (this may not be an efficient implementation)
+                sublists.append(oriented_sublist)
+            start_seg_idx = end_seg_idx + 1
+    sublists = sorted(sublists, key=lambda x: -len(x))
+
+    ### for each sublist, compare against all smaller sublist
+    ## if there is intersection: if subgroup, remove larger sublist; else, remove both and re-insert the intersection
+    ## if not intersection: continue downward; if all lower sublist are non-intersecting, this sublist is good for merge
+    sublists_to_merge = []
+    while len(sublists) > 0:
+        sublist = sublists.pop(0)
+        if len(sublist) < 2:
+            break  # all remainings are <2, so finding merge segments is completed
+        sublist_removed = False
+        sublist_to_compare_removal_idx = -1
+        sublist_to_add = None
+        for compare_idx, sublist_to_compare in enumerate(sublists):
+            # sublist_to_compare is <= in len() to sublist due to max-heap structure
+            intersection_sublist, is_substring = sublist_intersection(sublist, sublist_to_compare)
+            if intersection_sublist:
+                # remove the larger sublist
+                sublist_removed = True
+                if not is_substring:
+                    # only keep the smaller sublist when it is a substring of the larger one, OW keep the intersection
+                    sublist_to_compare_removal_idx = compare_idx
+                    sublist_to_add = intersection_sublist
+                break  # break whenever a single conflict is found
+
+        if not sublist_removed:
+            sublists_to_merge.append(sublist)
+        else:
+            if sublist_to_compare_removal_idx != -1:
+                sublists.pop(sublist_to_compare_removal_idx)
+                sublists.append(sublist_to_add)
+                sublists = sorted(sublists, key=lambda x: -len(x))  # can be optimized
+
+    ### find all occurences and merge
+    # also scan for inverted segment
+    inverted_sublists_to_merge = [invert_sublist(sublist) for sublist in sublists_to_merge]
     for path in path_list:
-        segments.extend(path.linear_path.segments)
-    sorted_segments = list(set(segments))
-    sorted_segments = sorted(sorted_segments, key=sort_segment)
-    for index, seg in enumerate(sorted_segments):
-        seg_dir = seg.kt_index[-1]
-        seg.kt_index = str(index)+seg_dir
+        ## find all ranges to be merged
+        merging_ranges = []  # inclusive ranges
+        for sublist in inverted_sublists_to_merge:
+            inverted_starts = find_all_indices(path.linear_path.segments, sublist[0])
+            for start in inverted_starts:
+                # sanity check, disable for performance
+                if path.linear_path.segments[start:start + len(sublist)] != sublist:
+                    raise RuntimeError()
+                merging_ranges.append((start, start + len(sublist) - 1))
+        for sublist in sublists_to_merge:
+            forward_starts = find_all_indices(path.linear_path.segments, sublist[0])
+            for start in forward_starts:
+                # sanity check, disable for performance
+                if path.linear_path.segments[start:start + len(sublist)] != sublist:
+                    segs_str = "".join([str(seg) for seg in path.linear_path.segments[start:start + len(sublist)]])
+                    subl_str = "".join([str(seg) for seg in sublist])
+                    print(f"segs: {segs_str}")
+                    print(f"subl: {subl_str}")
+                    raise RuntimeError()
+                merging_ranges.append((start, start + len(sublist) - 1))
 
-def sort_segment(segment):
-    return int(segment.kt_index[:-1])
+        ## merge
+        merging_ranges = sorted(merging_ranges, key=lambda x: x[0], reverse=True)
+        for merge_range in merging_ranges:
+            # pop from the back to preserve list indices; ranges are also non-intersecting
+            segments_to_merge = []
+            for seg_idx in range(merge_range[1], merge_range[0]-1, -1):
+                segments_to_merge.append(path.linear_path.segments.pop(seg_idx))
+            segments_to_merge = segments_to_merge[::-1]
+            merged_segment = merge_segments(segments_to_merge)
+            path.linear_path.segments.insert(merge_range[0], merged_segment)
 
-def find_path(path_list, path_name):
+    ### TODO: create breakpoints at centromere boundaries
+
+    ### collect segment_list
+    all_segments = []
     for path in path_list:
-        if path.path_name == path_name:
-            return path
-    return None
+        for seg in path.linear_path.segments:
+            new_seg = seg.duplicate()
+            if not new_seg.direction():
+                new_seg.invert()
+            if new_seg not in all_segments:
+                all_segments.append(new_seg)
+    all_segments = sorted(all_segments)
+    segment_obj_to_idx_dict = {seg: idx + 1 for idx, seg in enumerate(all_segments)}
+    return path_list, segment_obj_to_idx_dict
 
-def merge_segments(segment_list):
-    #TODO Make sure that the list of segments are valid
-    segment_direction = segment_list[0].kt_index[-1]
-    segment = Segment(segment_list[0].chr_name, segment_list[0].start, segment_list[-1].end, "OMKar_unlabeled")
-    segment.kt_index = segment_list[0].kt_index
-    return [segment]
+def find_all_indices(lst, element):
+    return [i for i, x in enumerate(lst) if x == element]
 
-def repeated_segments(path_segment_dict):
-    # Reverse mapping dictionary
-    reverse_dict = {}
+def legal_contig_extension(segments, start_idx, gap_allowance):
+    c_seg = segments[start_idx]
+    orientation = c_seg.direction()
+    end_idx = start_idx
+    for seg in segments[start_idx+1:]:
+        if seg.direction() != orientation:
+            break
+        if orientation:
+            if seg.start - c_seg.end > gap_allowance or seg.start - c_seg.end < 0:
+                break
+        else:
+            if c_seg.start - seg.end > gap_allowance:
+                break
+        c_seg = seg
+        end_idx += 1
+    return end_idx
 
-    # Populate reverse_dict with segments as keys and paths as values
-    for path, segments in path_segment_dict.items():
-        if segments not in reverse_dict:
-            reverse_dict[segments] = []
-        reverse_dict[segments].append(path)
+def sublist_intersection(large_sublist, small_sublist):
+    """
+    @param large_sublist:
+    @param small_sublist:
+    @return: the intersection list, AND whether small_sublist is a substring of large_sublist
+    """
+    ## impossible to have intersection at two, non-contiguous locations, as both sublists are contigs
+    intersection_start = -1
+    intersection_end = -1
+    for idx, seg in enumerate(large_sublist):
+        if seg in small_sublist:
+            intersection_start = idx
+            break
+    for idx, seg in enumerate(large_sublist[intersection_start:]):
+        if seg not in small_sublist:
+            intersection_end = intersection_start + idx  # not inclusive
+            break
+    if intersection_start != -1:
+        if intersection_end == -1:
+            intersection_sublist = large_sublist[intersection_start:]
+        else:
+            intersection_sublist = large_sublist[intersection_start:intersection_end]
+    else:
+        intersection_sublist = []
+    if not intersection_sublist:
+        return [], False
+    small_sublist_start_idx = small_sublist.index(intersection_sublist[0])
+    small_sublist_end_idx = small_sublist.index(intersection_sublist[-1])
+    if small_sublist_start_idx != 0 or small_sublist_end_idx != len(small_sublist) - 1:
+        is_substring = False
+    else:
+        is_substring = True
+    return intersection_sublist, is_substring
 
-    # Find duplicates
-    duplicates = {seg: paths for seg, paths in reverse_dict.items() if len(paths) >1 and len(seg.split(" ")) > 1}
-    return duplicates
+def invert_sublist(sublist):
+    new_lst = []
+    for seg in sublist[::-1]:
+        new_seg = seg.duplicate()
+        new_seg.invert()
+        new_lst.append(new_seg)
+    return new_lst
 
+def positively_orient_sublist(sublist):
+    ## assumes sublist is legal
+    orientation = sublist[0].direction()
+    if orientation:
+        return sublist
+    else:
+        return invert_sublist(sublist)
 
-    
-    # merge_identical_paths(path_list)
+def merge_segments(segment_sublist):
+    def concatenate_kt_index(segments):
+        return ''.join(segment.kt_index for segment in segments)
 
+    ## assumes the gap/cont. were checked earlier
+    return Segment(segment_sublist[0].chr_name,
+                   segment_sublist[0].start,
+                   segment_sublist[-1].end,
+                   kt_index=concatenate_kt_index(segment_sublist))
 
-def write_OMKar_to_file(path_list, segment_list, filename):
-    return None
+####################################################################################
+
+def write_MK_file(output_path, path_list, segment_obj_to_idx_dict):
+    output_str = "Segment\tNumber\tChromosome\tStart\tEnd\tStartNode\tEndNode\n"
+    for seg_obj, seg_idx in segment_obj_to_idx_dict.items():
+        chrom = seg_obj.chr_name.replace("Chr", "")
+        if chrom == "X":
+            chrom = "23"
+        elif chrom == "Y":
+            chrom = "24"
+        output_str += f"Segment {seg_idx}\t{chrom}\t{seg_obj.start}\t{seg_obj.end}\n"
+    for idx, path in enumerate(path_list):
+        seg_string = []
+        for seg_obj in path.linear_path.segments:
+            if not seg_obj.direction():
+                new_seg = seg_obj.duplicate()
+                new_seg.invert()
+                seg_string.append(f"{segment_obj_to_idx_dict[new_seg]}-")
+            else:
+                seg_string.append(f"{segment_obj_to_idx_dict[seg_obj]}+")
+        seg_string = " ".join(seg_string)
+        output_str += f"Path{idx+1} = {seg_string}\n"
+    output_str = output_str.strip()
+    with open(output_path, "w") as fp_write:
+        fp_write.write(output_str)
 
 def read_OMKar_output(file, return_segment_dict=False):
     segment_dict = {}
@@ -238,87 +494,6 @@ def generate_wt_from_OMKar_output(segment_to_index_dict):
     wt_indexed_paths[c_chr] = c_path
 
     return wt_indexed_paths
-
-
-def rotate_and_bin_path(path_list, forbidden_region_file='Metadata/acrocentric_telo_cen.bed', return_rotated_idx=False):
-    """
-    only works if each path contains exactly one centromere, OW will bin according to t1+t2+centromere percentage,
-    if still no, will bin according to overall chr-content percentage
-    will mark path accordingly if centromere anomaly exists
-    :param forbidden_region_file:
-    :param path_list:
-    :return: path_list
-    """
-    rotated_path_idx = []
-    # isolate centromere
-    # forbidden_region_path = Path(read_forbidden_regions(forbidden_region_file), 'forbidden_regions', 'forbidden_regions')
-    label_path_with_forbidden_regions(path_list, forbidden_region_file)
-    # for path in path_list:
-    #     path.generate_mutual_breakpoints(other_path=forbidden_region_path, mutual=False)
-
-    # get centromere, rotate if backward, and bin path
-    for path_idx, path in enumerate(path_list):
-        # print(path.path_name)
-        path_centromere = []
-        path_telomeres = []
-        for segment_itr in path.linear_path.segments:
-            if 'centromere' in segment_itr.segment_type:
-                path_centromere.append(segment_itr.duplicate())
-            elif 'telomere' in segment_itr.segment_type:
-                path_telomeres.append(segment_itr.duplicate())
-
-        path_centromere_arm = Arm(path_centromere, 'centromeres')
-        path_centromere_arm.merge_breakpoints()
-
-        if len(path_centromere_arm.segments) >= 1:
-            centromere_set = set()
-            for cen_seg in path_centromere_arm.segments:
-                centromere_set.add(cen_seg.chr_name)
-            if len(centromere_set) > 1:
-                path.path_chr = '-multiple centromeres ({}), highest representation: {}'.format(centromere_set, get_highest_represented_chr(path_centromere))
-            else:
-                path.path_chr = path_centromere_arm.segments[0].chr_name
-            if not highest_represented_direction(path_centromere):
-                rotated_path_idx.append(path_idx)
-                rotate_path(path)
-        else:
-            # no centromere segment detected, assume only q arm remains
-            # take the first and the last segment, rotate chr if last segment index > first AND they are on the same chr
-            path.path_chr = "-no centromere, highest representation: " + get_highest_represented_chr(path.linear_path.segments)
-            first_segment = path.linear_path.segments[0]
-            last_segment = path.linear_path.segments[-1]
-
-            if first_segment.chr_name != last_segment.chr_name:
-                # search for the last segment that is the same chr origin as the first segment (cont.)
-                next_idx = 0
-                while True:
-                    if next_idx + 1 < len(path.linear_path.segments) and path.linear_path.segments[next_idx + 1].chr_name == first_segment.chr_name:
-                        next_idx += 1
-                    else:
-                        break
-                last_segment_same_chr = path.linear_path.segments[next_idx]
-                forward_delta = last_segment_same_chr.end - first_segment.start
-
-                # search for the first segment that is the same chr origin as the last segment (cont.)
-                previous_idx = len(path.linear_path.segments) - 1
-                while True:
-                    if previous_idx - 1 >= 0 and path.linear_path.segments[previous_idx - 1].chr_name == last_segment.chr_name:
-                        previous_idx -= 1
-                    else:
-                        break
-                first_segment_same_chr = path.linear_path.segments[previous_idx]
-                reverse_delta = last_segment.end - first_segment_same_chr.start
-
-                # take major representation
-                if forward_delta + reverse_delta < 0:
-                    rotated_path_idx.append(path_idx)
-                    rotate_path(path)
-            else:
-                if first_segment.start > last_segment.end:
-                    rotated_path_idx.append(path_idx)
-                    rotate_path(path)
-    if return_rotated_idx:
-        return rotated_path_idx
 
 
 def count_chr_number(binned_path_list):
@@ -440,6 +615,9 @@ def bed_similar_sv_edge(bed_df, chromosome, pos1, pos2, approx_distance, reverse
     else:
         mask1 = (abs(bed_df['start'] - pos1) + abs(bed_df['end'] - pos2)) < approx_distance
         return bed_df[chr_mask & mask1]
+
+
+################################TESTS############################
 
 
 def test():

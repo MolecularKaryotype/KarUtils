@@ -60,7 +60,7 @@ def get_prefix_suffix_forbidden_boundaries(forbidden_region_file=get_metadata_fi
     used for creating source and sink nodes in comparison
     for prefix and suffix forbidden regions, start boundary is the last bp of the prefix forbidden segment; end boundary is the first bp of the suffix
     :param forbidden_region_file: assumes chr order starts with 1, and segment in increasing order; all the same chr segments are in the same block
-    :return:
+    :return: {'Chr{i}': {'start': int, 'end': int}}
     """
     forbidden_region_arm = read_forbidden_regions(forbidden_region_file)
     boundaries = {f"Chr{i}": {'start': -1, 'end': -1} for i in list(range(1, 23)) + ['X', 'Y']}  # for every chromosome, there is a start + end boundary
