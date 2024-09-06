@@ -110,11 +110,24 @@ def get_centromere_boundaries(forbidden_region_file=get_metadata_file_path("acro
     for seg in forbidden_region_arm.segments:
         seg_chr = seg.chr_name
         seg_type = seg.segment_type
-        if seg_type == 'centromere':
+        if seg_type == 'centromere' or seg_type == 'acrocentric-centromere':
             boundaries[seg_chr]['start'] = seg.start
             boundaries[seg_chr]['end'] = seg.end
     return boundaries
 
+def seg_intersect_boundaries(forbidden_boundaries, seg):
+    """
+    return whether a seg has intersection with the interior(inclusive) of a Centromere/Prefix-Suffiex Boundary
+    @param forbidden_boundaries:
+    @param seg:
+    @return:
+    """
+    chrom = seg.chr_name
+    boundary_start = forbidden_boundaries[chrom]['start']
+    boundary_end = forbidden_boundaries[chrom]['end']
+    if boundary_start <= seg.end and seg.start <= boundary_end:
+        return True
+    return False
 
 def test():
     print(read_forbidden_regions(get_metadata_file_path("acrocentric_telo_cen.bed")))
