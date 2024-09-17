@@ -1,3 +1,5 @@
+from cgitb import small
+
 from .forbidden_region_processing import *
 from .utils import *
 from collections import defaultdict
@@ -58,8 +60,8 @@ def check_spanning(segment_dict, forbidden_region_file, allowance=5):
             return False
     return True
 
-def validate_OMKar_output(mk_dir, cont_allowance=50000, span_allowance=50000,
-                            forbidden_region_file=get_metadata_file_path('acrocentric_telo_cen.bed')):
+def batch_validate_OMKar_output(mk_dir, cont_allowance=50000, span_allowance=50000,
+                                forbidden_region_file=get_metadata_file_path('acrocentric_telo_cen.bed')):
     def validate_single_file(filepath):
         path_list, segment_dict = read_OMKar_output(filepath, return_segment_dict=True)
         for index, segment in segment_dict.items():
@@ -74,15 +76,18 @@ def validate_OMKar_output(mk_dir, cont_allowance=50000, span_allowance=50000,
 
     file_names = os.listdir(mk_dir)
     all_true = True
+    false_file_paths = []
     for omkar_output in file_names:
         omkar_output_filepath = os.path.join(mk_dir, omkar_output)
         if not validate_single_file(omkar_output_filepath):
             all_true = False
+            false_file_paths.append(omkar_output_filepath)
             print(f"^FALSE: {omkar_output}")
         else:
             print(f"^TRUE: {omkar_output}")
 
     print(f"***ALL_RETURNED_CORRECT: {all_true}")
+    return false_file_paths
 
 #################################POST-PROCESSING################################
 
@@ -166,7 +171,8 @@ def rotate_and_bin_path(path_list, forbidden_region_file=get_metadata_file_path(
     if return_rotated_idx:
         return rotated_path_idx
 
-def post_process_OMKar_output(path_list, gap_allowance=5):
+def post_process_OMKar_output(path_list, gap_allowance=5, isolate_centromere=True,
+                              forbidden_region_file=get_metadata_file_path('acrocentric_telo_cen.bed')):
     ### invert paths that are output as backward
     tmp_path_list = []
     for path in path_list:
@@ -192,37 +198,62 @@ def post_process_OMKar_output(path_list, gap_allowance=5):
                 sublists.append(oriented_sublist)
             start_seg_idx = end_seg_idx + 1
     sublists = sorted(sublists, key=lambda x: -len(x))
+    ### break up all sublists if they pairwise intersect with another, until no further breaking is available
+    ### then, remove all sublists with just one element
+    while True:
+        new_sublists_to_add = []
+        sublist_to_remove_idx = set()
+        ## all pairwise comparison
+        for sublist_idx, sublist in enumerate(sublists):
+            for compare_sublist_idx in range(sublist_idx+1, len(sublists)):
+                compare_sublist = sublists[compare_sublist_idx]
+                splitted_sublists = sublist_breaking(sublist, compare_sublist)
+                if splitted_sublists:
+                    sublist_to_remove_idx.add(sublist_idx)
+                    sublist_to_remove_idx.add(compare_sublist_idx)
+                    new_sublists_to_add += splitted_sublists
 
-    ### for each sublist, compare against all smaller sublist
-    ## if there is intersection: if subgroup, remove larger sublist; else, remove both and re-insert the intersection
-    ## if not intersection: continue downward; if all lower sublist are non-intersecting, this sublist is good for merge
-    sublists_to_merge = []
-    while len(sublists) > 0:
-        sublist = sublists.pop(0)
-        if len(sublist) < 2:
-            break  # all remainings are <2, so finding merge segments is completed
-        sublist_removed = False
-        sublist_to_compare_removal_idx = -1
-        sublist_to_add = None
-        for compare_idx, sublist_to_compare in enumerate(sublists):
-            # sublist_to_compare is <= in len() to sublist due to max-heap structure
-            intersection_sublist, is_substring = sublist_intersection(sublist, sublist_to_compare)
-            if intersection_sublist:
-                # remove the larger sublist
-                sublist_removed = True
-                if not is_substring:
-                    # only keep the smaller sublist when it is a substring of the larger one, OW keep the intersection
-                    sublist_to_compare_removal_idx = compare_idx
-                    sublist_to_add = intersection_sublist
-                break  # break whenever a single conflict is found
-
-        if not sublist_removed:
-            sublists_to_merge.append(sublist)
-        else:
-            if sublist_to_compare_removal_idx != -1:
-                sublists.pop(sublist_to_compare_removal_idx)
-                sublists.append(sublist_to_add)
-                sublists = sorted(sublists, key=lambda x: -len(x))  # can be optimized
+        sublist_to_remove_idx = list(sublist_to_remove_idx)
+        sublist_to_remove_idx = sorted(sublist_to_remove_idx, reverse=True)
+        if not sublist_to_remove_idx:
+            break  # all intersections removed
+        for sublist_to_remove_itr in sublist_to_remove_idx:
+            sublists.pop(sublist_to_remove_itr)
+        for sublist_itr in new_sublists_to_add:
+            if sublist_itr not in sublists:
+                sublists.append(sublist_itr)
+        sublists = sorted(sublists, key=lambda x: -len(x))
+    sublists_to_merge = [sub for sub in sublists if len(sub) >= 2]
+    #
+    # sublists_to_merge = []
+    # while len(sublists) > 0:
+    #     sublist = sublists.pop(0)
+    #     if len(sublist) < 2:
+    #         break  # all remainings are <2, so finding merge segments is completed
+    #     sublist_to_be_removed = False
+    #     sublist_to_compare_removal_idx = []
+    #     sublist_to_add = []
+    #     for compare_idx, sublist_to_compare in enumerate(sublists):
+    #         # sublist_to_compare is <= in len() to sublist due to max-heap structure
+    #
+    #         if intersection_sublist:
+    #             # remove the larger sublist
+    #             sublist_to_be_removed = True
+    #             if not is_substring:
+    #                 # only keep the smaller sublist when it is a substring of the larger one, OW keep the intersection
+    #                 sublist_to_compare_removal_idx.append(compare_idx)
+    #                 sublist_to_add.append(intersection_sublist)
+    #
+    #     if not sublist_to_be_removed:
+    #         sublists_to_merge.append(sublist)
+    #     else:
+    #         if sublist_to_compare_removal_idx:
+    #             sublist_to_compare_removal_idx = sorted(sublist_to_compare_removal_idx, reverse=True)
+    #             for idx in sublist_to_compare_removal_idx:
+    #                 sublists.pop(idx)
+    #             for sublist_itr in sublist_to_add:
+    #                 sublists.append(sublist_itr)
+    #             sublists = sorted(sublists, key=lambda x: -len(x))  # can be optimized
 
     ### find all occurences and merge
     # also scan for inverted segment
@@ -260,7 +291,14 @@ def post_process_OMKar_output(path_list, gap_allowance=5):
             merged_segment = merge_segments(segments_to_merge)
             path.linear_path.segments.insert(merge_range[0], merged_segment)
 
-    ### TODO: create breakpoints at centromere boundaries
+    ### create breakpoints at centromere boundaries
+    if isolate_centromere:
+        centromere_boundaries = get_centromere_boundaries(forbidden_region_file)
+        for path in path_list:
+            segment_arm = path.linear_path
+            for chrom, cen_boundary in centromere_boundaries.items():
+                segment_arm.introduce_breakpoint(chrom, cen_boundary['start'], 'start')
+                segment_arm.introduce_breakpoint(chrom, cen_boundary['end'], 'end')
 
     ### collect segment_list
     all_segments = []
@@ -274,6 +312,30 @@ def post_process_OMKar_output(path_list, gap_allowance=5):
     all_segments = sorted(all_segments)
     segment_obj_to_idx_dict = {seg: idx + 1 for idx, seg in enumerate(all_segments)}
     return path_list, segment_obj_to_idx_dict
+
+def batch_post_process_OMKar_output(omkar_output_dir, processing_output_dir, gap_merge_allowance=5,
+                                    isolate_centromere=True,
+                                    forbidden_region_file=get_metadata_file_path('acrocentric_telo_cen.bed')):
+    os.makedirs(processing_output_dir, exist_ok=True)
+
+    ### validate to skip files with issues
+    files_with_issues = batch_validate_OMKar_output(omkar_output_dir)
+    files_with_issues = [os.path.basename(file_name) for file_name in files_with_issues]
+
+    for file_name in os.listdir(omkar_output_dir):
+        if file_name in files_with_issues:
+            print(f"skipping file with issue: {file_name}")
+            continue
+        print(f"post-processing: {file_name}")
+        input_filepath = os.path.join(omkar_output_dir, file_name)
+        output_filepath = os.path.join(processing_output_dir, file_name)
+        path_list, segment_dict = read_OMKar_output(input_filepath, return_segment_dict=True)
+        processed_path_list, segment_obj_to_idx_dict = post_process_OMKar_output(path_list,
+                                                                                 gap_allowance=gap_merge_allowance,
+                                                                                 isolate_centromere=isolate_centromere,
+                                                                                 forbidden_region_file=forbidden_region_file)
+        write_MK_file(output_filepath, processed_path_list, segment_obj_to_idx_dict)
+
 
 def find_all_indices(lst, element):
     return [i for i, x in enumerate(lst) if x == element]
@@ -289,17 +351,18 @@ def legal_contig_extension(segments, start_idx, gap_allowance):
             if seg.start - c_seg.end > gap_allowance or seg.start - c_seg.end < 0:
                 break
         else:
-            if c_seg.start - seg.end > gap_allowance:
+            if c_seg.end - seg.start > gap_allowance or c_seg.end - seg.start < 0:
                 break
         c_seg = seg
         end_idx += 1
     return end_idx
 
-def sublist_intersection(large_sublist, small_sublist):
+def sublist_breaking(large_sublist, small_sublist):
     """
     @param large_sublist:
     @param small_sublist:
-    @return: the intersection list, AND whether small_sublist is a substring of large_sublist
+    @return: breakup the two sublists into multiple smaller sublists, so there is no intersection in the set(smaller sublists)
+    If no intersection present from the start, return []
     """
     ## impossible to have intersection at two, non-contiguous locations, as both sublists are contigs
     intersection_start = -1
@@ -320,14 +383,30 @@ def sublist_intersection(large_sublist, small_sublist):
     else:
         intersection_sublist = []
     if not intersection_sublist:
-        return [], False
+        return []
+
     small_sublist_start_idx = small_sublist.index(intersection_sublist[0])
-    small_sublist_end_idx = small_sublist.index(intersection_sublist[-1])
-    if small_sublist_start_idx != 0 or small_sublist_end_idx != len(small_sublist) - 1:
-        is_substring = False
-    else:
-        is_substring = True
-    return intersection_sublist, is_substring
+    small_sublist_end_idx = small_sublist.index(intersection_sublist[-1]) + 1  # not inclusive
+
+    splitted_sublists = [intersection_sublist]
+    if small_sublist_start_idx != 0:
+        new_sublist = small_sublist[:small_sublist_start_idx]
+        if new_sublist not in splitted_sublists and len(new_sublist) >= 2:
+            splitted_sublists.append(new_sublist)
+    if small_sublist_end_idx != len(small_sublist):
+        new_sublist = small_sublist[small_sublist_end_idx:]
+        if new_sublist not in splitted_sublists and len(new_sublist) >= 2:
+            splitted_sublists.append(new_sublist)
+    if intersection_start != 0:
+        new_sublist = large_sublist[:intersection_start]
+        if new_sublist not in splitted_sublists and len(new_sublist) >= 2:
+            splitted_sublists.append(new_sublist)
+    if intersection_end != -1:
+        new_sublist = large_sublist[intersection_end:]
+        if new_sublist not in splitted_sublists and len(new_sublist) >= 2:
+            splitted_sublists.append(new_sublist)
+
+    return splitted_sublists
 
 def invert_sublist(sublist):
     new_lst = []
@@ -365,7 +444,7 @@ def write_MK_file(output_path, path_list, segment_obj_to_idx_dict):
             chrom = "23"
         elif chrom == "Y":
             chrom = "24"
-        output_str += f"Segment {seg_idx}\t{chrom}\t{seg_obj.start}\t{seg_obj.end}\n"
+        output_str += f"Segment\t{seg_idx}\t{chrom}\t{seg_obj.start}\t{seg_obj.end}\n"
     for idx, path in enumerate(path_list):
         seg_string = []
         for seg_obj in path.linear_path.segments:
@@ -433,7 +512,7 @@ def read_OMKar_output(file, return_segment_dict=False):
         return path_list
 
 
-def read_OMKar_to_indexed_list(OMKar_output_file, forbidden_region_file='Metadata/acrocentric_telo_cen.bed'):
+def read_OMKar_to_indexed_list(OMKar_output_file, forbidden_region_file=get_metadata_file_path('acrocentric_telo_cen.bed')):
     path_list, index_dict = read_OMKar_output(OMKar_output_file, return_segment_dict=True)
     ## extract which path to rotate and rotate, without splitting segments
     tmp_path_list = []
@@ -630,7 +709,7 @@ def test():
 
 def test_read_OMKar_output():
     path_list, segment_list = read_OMKar_output("sample_input/23Y_Cri_du_Chat_r1.1.txt", return_segment_dict=True)
-    if validate_OMKar_output(path_list,segment_dict=segment_list) == True:
+    if batch_validate_OMKar_output(path_list, segment_dict=segment_list) == True:
         post_process_function(path_list,segment_list)
 
 def test_read_OMKar_to_path():
