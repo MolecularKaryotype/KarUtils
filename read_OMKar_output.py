@@ -33,14 +33,14 @@ def all_segments_continuous(segments, allowance):
             return False
     return True
 
-def check_continous(segment_dict, allowance=5):
+def check_continous(segment_dict, allowance):
     groups = group_segments_by_chr(segment_dict)
     for chrom, segments in groups.items():
         if not all_segments_continuous(segments, allowance):
             return False
     return True
 
-def check_spanning(segment_dict, forbidden_region_file, allowance=5):
+def check_spanning(segment_dict, forbidden_region_file, allowance):
     groups = group_segments_by_chr(segment_dict)
     nonforbidden_boundaries = get_prefix_suffix_forbidden_boundaries(forbidden_region_file=forbidden_region_file)
     for chrom, segments in groups.items():
