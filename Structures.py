@@ -33,7 +33,8 @@ class Segment:
                       'acrocentric-centromere',
                       "arm_region",
                       "hardmask",
-                      "superdup"]
+                      "superdup",
+                      'OMKar_unlabeled']
 
         def get_chr_order(chromosome_name):
             chr_extracted = chromosome_name.replace('Chr', '')
