@@ -1,5 +1,3 @@
-from cgitb import small
-
 from .forbidden_region_processing import *
 from .utils import *
 from collections import defaultdict
@@ -60,26 +58,28 @@ def check_spanning(segment_dict, forbidden_region_file, allowance):
             return False
     return True
 
-def batch_validate_OMKar_output(mk_dir, cont_allowance=50000, span_allowance=50000,
-                                forbidden_region_file=get_metadata_file_path('acrocentric_telo_cen.bed')):
-    def validate_single_file(filepath):
-        path_list, segment_dict = read_OMKar_output(filepath, return_segment_dict=True)
-        for index, segment in segment_dict.items():
-            if not segment.direction():
-                print(f"inverted direction: {segment}")
-                return False
-        if not check_continous(segment_dict, allowance=cont_allowance):
-            return False
-        if not check_spanning(segment_dict, forbidden_region_file, allowance=span_allowance):
-            return False
-        return True
 
+def validate_OMKar_output_format(filepath, cont_allowance, span_allowance, forbidden_region_file):
+    path_list, segment_dict = read_OMKar_output(filepath, return_segment_dict=True)
+    for index, segment in segment_dict.items():
+        if not segment.direction():
+            print(f"inverted direction: {segment}")
+            return False
+    if not check_continous(segment_dict, allowance=cont_allowance):
+        return False
+    if not check_spanning(segment_dict, forbidden_region_file, allowance=span_allowance):
+        return False
+    return True
+
+
+def batch_validate_OMKar_output_format(mk_dir, cont_allowance=50000, span_allowance=50000,
+                                       forbidden_region_file=get_metadata_file_path('acrocentric_telo_cen.bed')):
     file_names = os.listdir(mk_dir)
     all_true = True
     false_file_paths = []
     for omkar_output in file_names:
         omkar_output_filepath = os.path.join(mk_dir, omkar_output)
-        if not validate_single_file(omkar_output_filepath):
+        if not validate_OMKar_output_format(omkar_output_filepath, cont_allowance, span_allowance, forbidden_region_file):
             all_true = False
             false_file_paths.append(omkar_output_filepath)
             print(f"^FALSE: {omkar_output}")
@@ -171,7 +171,7 @@ def rotate_and_bin_path(path_list, forbidden_region_file=get_metadata_file_path(
     if return_rotated_idx:
         return rotated_path_idx
 
-def post_process_OMKar_output(path_list, gap_allowance=5, isolate_centromere=True,
+def post_process_OMKar_output(path_list, gap_merge_allowance=5, isolate_centromere=True,
                               forbidden_region_file=get_metadata_file_path('acrocentric_telo_cen.bed')):
     ### invert paths that are output as backward
     tmp_path_list = []
@@ -189,7 +189,7 @@ def post_process_OMKar_output(path_list, gap_allowance=5, isolate_centromere=Tru
     for path in path_list:
         start_seg_idx = 0
         while start_seg_idx < len(path.linear_path.segments):
-            end_seg_idx = legal_contig_extension(path.linear_path.segments, start_seg_idx, gap_allowance)
+            end_seg_idx = legal_contig_extension(path.linear_path.segments, start_seg_idx, gap_merge_allowance)
             sublist = path.linear_path.segments[start_seg_idx:end_seg_idx+1]
             ## reorient each sublist so that they are each in the + direction
             oriented_sublist = positively_orient_sublist(sublist)
@@ -319,7 +319,7 @@ def batch_post_process_OMKar_output(omkar_output_dir, processing_output_dir, gap
     os.makedirs(processing_output_dir, exist_ok=True)
 
     ### validate to skip files with issues
-    files_with_issues = batch_validate_OMKar_output(omkar_output_dir)
+    files_with_issues = batch_validate_OMKar_output_format(omkar_output_dir)
     files_with_issues = [os.path.basename(file_name) for file_name in files_with_issues]
 
     for file_name in os.listdir(omkar_output_dir):
@@ -331,7 +331,7 @@ def batch_post_process_OMKar_output(omkar_output_dir, processing_output_dir, gap
         output_filepath = os.path.join(processing_output_dir, file_name)
         path_list, segment_dict = read_OMKar_output(input_filepath, return_segment_dict=True)
         processed_path_list, segment_obj_to_idx_dict = post_process_OMKar_output(path_list,
-                                                                                 gap_allowance=gap_merge_allowance,
+                                                                                 gap_merge_allowance=gap_merge_allowance,
                                                                                  isolate_centromere=isolate_centromere,
                                                                                  forbidden_region_file=forbidden_region_file)
         write_MK_file(output_filepath, processed_path_list, segment_obj_to_idx_dict)
@@ -340,7 +340,7 @@ def batch_post_process_OMKar_output(omkar_output_dir, processing_output_dir, gap
 def find_all_indices(lst, element):
     return [i for i, x in enumerate(lst) if x == element]
 
-def legal_contig_extension(segments, start_idx, gap_allowance):
+def legal_contig_extension(segments, start_idx, gap_merge_allowance):
     c_seg = segments[start_idx]
     orientation = c_seg.direction()
     end_idx = start_idx
@@ -348,10 +348,10 @@ def legal_contig_extension(segments, start_idx, gap_allowance):
         if seg.direction() != orientation:
             break
         if orientation:
-            if seg.start - c_seg.end > gap_allowance or seg.start - c_seg.end < 0:
+            if seg.start - c_seg.end > gap_merge_allowance or seg.start - c_seg.end < 0:
                 break
         else:
-            if c_seg.end - seg.start > gap_allowance or c_seg.end - seg.start < 0:
+            if c_seg.end - seg.start > gap_merge_allowance or c_seg.end - seg.start < 0:
                 break
         c_seg = seg
         end_idx += 1
@@ -437,7 +437,7 @@ def merge_segments(segment_sublist):
 ####################################################################################
 
 def write_MK_file(output_path, path_list, segment_obj_to_idx_dict):
-    output_str = "Segment\tNumber\tChromosome\tStart\tEnd\tStartNode\tEndNode\n"
+    output_str = "Segment\tNumber\tChromosome\tStart\tEnd\n"
     for seg_obj, seg_idx in segment_obj_to_idx_dict.items():
         chrom = seg_obj.chr_name.replace("Chr", "")
         if chrom == "X":
@@ -709,7 +709,7 @@ def test():
 
 def test_read_OMKar_output():
     path_list, segment_list = read_OMKar_output("sample_input/23Y_Cri_du_Chat_r1.1.txt", return_segment_dict=True)
-    if batch_validate_OMKar_output(path_list, segment_dict=segment_list) == True:
+    if batch_validate_OMKar_output_format(path_list, segment_dict=segment_list) == True:
         post_process_function(path_list,segment_list)
 
 def test_read_OMKar_to_path():
