@@ -88,3 +88,12 @@ def get_metadata_file_path(filename):
 def round_half_up(n):
     import math
     return int(math.floor(n + 0.5))
+
+
+def convert_chrom(i_chrom):
+    if i_chrom.upper() == 'X':
+        return 23
+    elif i_chrom.upper() == 'Y':
+        return 24
+    else:
+        return int(i_chrom)
