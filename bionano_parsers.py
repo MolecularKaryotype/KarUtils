@@ -216,10 +216,13 @@ def parse_forbiden_region(forbiden):
 ## ZJ
 def smap_to_df(smap_filepath):
     with open(smap_filepath) as fp_read:
-        for i in range(6):
-            fp_read.readline()
-        headers = fp_read.readline().replace('\n', '').split('\t')[1:]
-    df = pd.read_csv(smap_filepath, sep='\t', skiprows=8, header=None, names=headers)
+        line_count = 0
+        for line in fp_read:
+            line_count += 1
+            if line.startswith('#h Smap'):
+                break
+        headers = line.replace('\n', '').split('\t')[1:]
+    df = pd.read_csv(smap_filepath, sep='\t', skiprows=line_count+1, header=None, names=headers)
     return df
 
 def cnv_to_df(cnv_filepath):
