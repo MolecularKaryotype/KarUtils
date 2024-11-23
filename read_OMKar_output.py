@@ -42,6 +42,9 @@ def check_spanning(segment_dict, forbidden_region_file, allowance):
     groups = group_segments_by_chr(segment_dict)
     nonforbidden_boundaries = get_prefix_suffix_forbidden_boundaries(forbidden_region_file=forbidden_region_file)
     for chrom, segments in groups.items():
+        if chrom == 'ChrY':
+            ## ignore ChrY spanning issue
+            continue
         chrom_nonforbidden_boundaries = nonforbidden_boundaries[chrom]
         ordered_segments = [seg.duplicate() for seg in segments]
         for seg in ordered_segments:
