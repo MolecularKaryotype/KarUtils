@@ -226,11 +226,16 @@ def smap_to_df(smap_filepath):
     return df
 
 def cnv_to_df(cnv_filepath):
+    skip = 2
+    with open(cnv_filepath) as fp:
+        line = fp.readline()
+        if line.startswith('#Id'):
+            skip = 0
     with open(cnv_filepath) as fp_read:
-        for i in range(2):
+        for i in range(skip):
             fp_read.readline()
         headers = fp_read.readline().replace('\n', '').replace('#', '').split('\t')[1:]
-    df = pd.read_csv(cnv_filepath, sep='\t', skiprows=3, header=None, names=headers)
+    df = pd.read_csv(cnv_filepath, sep='\t', skiprows=skip+1, header=None, names=headers)
     return df
 
 def edge_in_smap(smap_df, chrom1, chrom2, start, end, allowed_event_types, confidence_threshold, max_coord_distance):
@@ -245,3 +250,61 @@ def edge_in_smap(smap_df, chrom1, chrom2, start, end, allowed_event_types, confi
     mask2 = abs(filtered_df['RefStartPos'] - end) + abs(filtered_df['RefEndPos'] - start) < max_coord_distance
     filtered_df = filtered_df[mask1 | mask2]
     return not filtered_df.empty
+
+def region_reported_cn(cnv_df, chrom, start, end):
+    """
+    :param cnv_df:
+    :param chrom: int (1-24)
+    :param start:
+    :param end:
+    :return: average CN of the region, expected CN
+    """
+    ## assumes no overlap in row entry in the cnv_df
+    filtered_df = cnv_df[cnv_df['Chromosome'] == chrom]
+    filtered_df.sort_values(by='Start', ascending=True)
+
+    ## figure out the expected count (mostly used for X)
+    expected_cn = -1
+    for index, row in filtered_df.iterrows():
+        if 1 < row['fractionalCopyNumber'] < 2 and 'loss' in row['Type']:
+            expected_cn = 2
+            break
+        elif 1 < row['fractionalCopyNumber'] < 2 and 'gain' in row['Type']:
+            expected_cn = 1
+            break
+    if expected_cn == -1:
+        print('assumed expected cn to be 2')
+        expected_cn = 2
+
+    ## tally average cn of the region from CNV file
+    total_cnv_entries = []
+    for index, row in filtered_df.iterrows():
+        if start <= row['Start'] <= end <= row['End']:
+            total_cnv_entries.append({'start': row['Start'], 'end': end, 'CN': row['fractionalCopyNumber']})
+        elif row['Start'] <= start <= end <= row['End']:
+            total_cnv_entries.append({'start': start, 'end': end, 'CN': row['fractionalCopyNumber']})
+        elif row['Start'] <= start <= row['End'] <= end:
+            total_cnv_entries.append({'start': start, 'end': row['End'], 'CN': row['fractionalCopyNumber']})
+        elif start <= row['Start']<= row['End'] <= end:
+            total_cnv_entries.append({'start': row['Start'], 'end': row['End'], 'CN': row['fractionalCopyNumber']})
+
+    ## fill missing gap with no CNV
+    total_cn = []
+    c_start = start
+    for cnv in total_cnv_entries:
+        if cnv['start'] > c_start:
+            total_cn.append({'start': c_start, 'end': cnv['start'] - 1, 'CN': expected_cn})
+        total_cn.append(cnv)
+        c_start = cnv['end'] + 1
+    if not total_cnv_entries:
+        total_cn.append({'start': start, 'end': end, 'CN': expected_cn})
+    elif total_cnv_entries[-1]['end'] < end:
+        total_cn.append({'start': total_cnv_entries[-1]['end'] + 1, 'end': end, 'CN': expected_cn})
+
+    ## averaging CN
+    cn_sum = 0
+    for e in total_cn:
+        cn_sum += e['CN'] * (e['end'] - e['start'] + 1)
+    cn_sum /= (end - start + 1)
+
+    return cn_sum, expected_cn
