@@ -97,3 +97,12 @@ def convert_chrom(i_chrom):
         return 24
     else:
         return int(i_chrom)
+
+
+def inverse_convert_chrom(i_chrom):
+    if i_chrom == 23:
+        return 'ChrX'
+    elif i_chrom == 24:
+        return 'ChrY'
+    else:
+        return f"Chr{i_chrom}"

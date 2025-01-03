@@ -1,1 +1,3 @@
 *.git
+test_parser.py
+__pycache__/
